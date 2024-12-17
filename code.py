@@ -1,63 +1,105 @@
+
+!pip install fuzzywuzzy
+!pip install python-Levenshtein
+
+# Import required libraries
 import numpy as np
 import nltk
 import string
 import random
-f=open('/content/datasett.txt','r',errors='ignore')
-raw_doc=f.read()
-raw_doc=raw_doc.lower()
-nltk.download('punkt_tab')
-nltk.download('wordnet')
-nltk.download('omw-1.4')
-sentence_tokens=nltk.sent_tokenize(raw_doc)
-word_tokens=nltk.word_tokenize(raw_doc)
-lemmer=nltk.stem.WordNetLemmatizer()
-def Lemtokens(tokens):
-  return [lemmer.lemmatize(token) for token in tokens]
-remove_punc_dict=dict((ord(punct),None)for punct in string.punctuation)
-def LemNormalize(text):
-  return Lemtokens(nltk.word_tokenize(text.lower().translate(remove_punc_dict)))
-greet_inputs=('hello','hi','whassup','how are you?','hey')
-greet_responses=('hi','hey','hey there!','hey,i am glad you are talking to me')
-def greet(sentence):
-  for word in sentence.split():
-    if word.lower() in greet_inputs:
-      return random.choice(greet_responses)
+from fuzzywuzzy import process
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-def response(user_response):
-  robol_response=''
-  TfidfVec=TfidfVectorizer(tokenizer=LemNormalize,stop_words='english')
-  tfidf=TfidfVec.fit_transform(sentence_tokens)
-  vals=cosine_similarity(tfidf[-1],tfidf)
-  idx=vals.argsort()[0][-2]
-  flat=vals.flatten()
-  flat.sort()
-  req_tfidf=flat[-2]
-  if(req_tfidf==0):
-    robol_response=robol_response + "I am sorry.Unable to understand you!"
-    return robol_response
-  else:
-    robol_response=robol_response+sentence_tokens[idx]
-    return robol_response 
-flag=True
-print('Hello! My Name is arisa.It is nice to connect with you')
-while (flag== True):
-  user_response=input()
-  user_response=user_response.lower()
-  if(user_response !='bye'):
-    if(user_response=='thank you' or user_response=='thanks'):
-      flag=False
-      print('You are welcome.')
+
+# Download NLTK data
+nltk.download('punkt')
+nltk.download('wordnet')
+nltk.download('omw-1.4')
+
+# Step 1: Load the Dataset and Split into Questions and Answers
+# Replace 'datasett.txt' with the path to your dataset file if different
+with open('datasett.txt', 'r', errors='ignore') as f:
+    raw_doc = f.read().lower()
+
+# Split the raw document into lines
+lines = raw_doc.splitlines()
+
+# Split each line into question-answer pairs
+conversation_pairs = [line.split('\t') for line in lines if '\t' in line]
+
+# Create a question-answer dictionary
+qa_pairs = {pair[0]: pair[1] for pair in conversation_pairs}
+questions = list(qa_pairs.keys())
+
+# Step 2: Preprocessing with Lemmatization
+lemmer = nltk.stem.WordNetLemmatizer()
+
+def LemNormalize(text):
+    remove_punct_dict = dict((ord(punct), None) for punct in string.punctuation)
+    return ' '.join([lemmer.lemmatize(token) for token in nltk.word_tokenize(
+        text.lower().translate(remove_punct_dict))])
+
+# Greetings Inputs and Responses
+greet_inputs = ('hello', 'hi', 'whassup', 'how are you?', 'hey')
+greet_responses = ('hi', 'hey', 'hey there!', 'hello, I’m glad you’re here!')
+
+def greet(sentence):
+    for word in sentence.split():
+        if word.lower() in greet_inputs:
+            return random.choice(greet_responses)
+    return None
+
+# Step 3: Response Matching Function
+def get_response(user_response):
+    # Preprocess the user response
+    user_response_processed = LemNormalize(user_response)
+    
+    # Append the user response to the list of questions
+    temp_questions = questions + [user_response_processed]
+    
+    # Vectorize the questions using TF-IDF
+    TfidfVec = TfidfVectorizer(stop_words='english')
+    tfidf = TfidfVec.fit_transform(temp_questions)
+    
+    # Compute cosine similarity between the user response and all questions
+    vals = cosine_similarity(tfidf[-1], tfidf[:-1])
+    idx = vals.argsort()[0][-1]  # Index of the most similar question
+    flat = vals.flatten()
+    flat.sort()
+    req_tfidf = flat[-1]
+    
+    # Threshold for selecting a response
+    threshold = 0.3
+    
+    if req_tfidf >= threshold:
+        return qa_pairs[questions[idx]]
     else:
-      if(greet(user_response)!=None):
-        print('Arisa:'+ greet(user_response))
-      else:
-        sentence_tokens.append(user_response)
-        word_tokens=word_tokens + nltk.word_tokenize(user_response)
-        final_words=list(set(word_tokens))
-        print('Arisa:', end='')
-        print(response(user_response))
-        sentence_tokens.remove(user_response)
-  else:
-    flag=False
-    print('Arisa:','Goodbye!')
+        # Use fuzzy matching if TF-IDF similarity is low
+        closest_match, score = process.extractOne(user_response_processed, questions)
+        if score > 60:  # Fuzzy matching threshold
+            return qa_pairs[closest_match]
+        else:
+            return "I'm sorry, I couldn't find a relevant response."
+
+# Step 4: Chatbot Interaction Loop
+def chatbot():
+    print("Arisa: Hello! My name is Arisa. It's nice to connect with you.")
+    flag = True
+    while flag:
+        user_response = input().lower()
+        if user_response.strip() != '':
+            if user_response in ['bye', 'exit', 'quit']:
+                flag = False
+                print("Arisa: Goodbye! Have a great day.")
+            elif user_response in ['thanks', 'thank you']:
+                print("Arisa: You're welcome!")
+            elif greet(user_response) is not None:
+                print("Arisa:", greet(user_response))
+            else:
+                response = get_response(user_response)
+                print("Arisa:", response)
+        else:
+            print("Arisa: Please say something.")
+
+# Run the chatbot
+chatbot()
