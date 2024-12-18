@@ -1,3 +1,73 @@
+import json
+import random
+import nltk
+import string
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+
+nltk.download('punkt')
+nltk.download('wordnet')
+
+lemmer = nltk.stem.WordNetLemmatizer()
+
+# Load intents.json
+with open('intents.json', 'r') as file:
+    intents = json.load(file)
+
+# Extract patterns and responses
+patterns = []
+responses = []
+
+for intent in intents:
+    for pattern in intent['patterns']:
+        patterns.append(pattern)
+        responses.append(random.choice(intent['responses']))
+
+# Preprocessing function
+def LemNormalize(text):
+    remove_punct_dict = dict((ord(punct), None) for punct in string.punctuation)
+    return ' '.join([lemmer.lemmatize(token) for token in nltk.word_tokenize(
+        text.lower().translate(remove_punct_dict))])
+
+# Function to generate a response
+def get_response(user_response):
+    user_response_processed = LemNormalize(user_response)
+    temp_patterns = patterns + [user_response_processed]
+    
+    # TF-IDF Vectorization
+    TfidfVec = TfidfVectorizer()
+    tfidf = TfidfVec.fit_transform(temp_patterns)
+    cosine_similarities = cosine_similarity(tfidf[-1], tfidf[:-1])
+    
+    # Find the best match
+    idx = cosine_similarities.argsort()[0][-1]
+    flat = cosine_similarities.flatten()
+    flat.sort()
+    highest_similarity = flat[-1]
+    
+    threshold = 0.3  # Adjust based on desired sensitivity
+    if highest_similarity >= threshold:
+        return responses[idx]
+    else:
+        return "I'm sorry, I couldn't find a relevant response."
+
+# Chatbot loop
+def chatbot():
+    print("Arisa: Hello! My name is Arisa. It's nice to connect with you.")
+    flag = True
+    while flag:
+        user_input = input().lower()
+        if user_input in ['bye', 'exit', 'quit']:
+            flag = False
+            print("Arisa: Goodbye! Have a great day.")
+        elif user_input in ['thanks', 'thank you']:
+            print("Arisa: You're welcome!")
+        else:
+            response = get_response(user_input)
+            print(f"Arisa: {response}")
+
+# Run the chatbot
+chatbot()
 
 !pip install fuzzywuzzy
 !pip install python-Levenshtein
